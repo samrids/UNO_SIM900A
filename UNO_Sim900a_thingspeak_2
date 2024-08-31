@@ -1,0 +1,106 @@
+#include <SoftwareSerial.h>  // Serial software library for interfacing GSM module
+SoftwareSerial SIM900A(2, 3); // RX, TX  // connect GSM Tx at D2 and Rx at D3
+
+const String API_KEY = "API_KEY";     // private key for posting data to ThingSpeak
+const String ip = "\"api.thingspeak.com\"";  // ThingSpeak server IP or URL
+const int port = 80;  // ThingSpeak server port
+int waiting;
+const String SendCmd = "AT+CIPSEND=";  // Sending number of bytes command
+const String Start = "AT+CIPSTART=\"TCP\"";  // TCPIP start command 
+
+void setup() 
+{
+  SIM900A.begin(115200);  // Initialize SIM900A for GSM
+  Serial.begin(9600);
+  delay(2000);
+
+  initGSM();      // Initialize GSM module
+
+  Serial.println("Initializing GPRS");
+  if (!initGPRS()) {  // Initialize GPRS in GSM Module
+    Serial.println("GPRS initialization failed!");
+    while (1);  // Halt if GPRS initialization fails
+  }
+  
+  Serial.println("System Ready");
+  delay(2000);
+}
+
+void loop()
+{        
+  Serial.println("Sending Data to server...");
+  
+  long randNumber = random(101, 200);
+  String url = "GET /update?api_key=" + API_KEY + "&field1=" + String(randNumber) + " HTTP/1.0\r\n\r\n";
+  String svr = Start + "," + ip + "," + String(port);
+
+  connectGSM(svr, "CONNECT");
+  delay(1000);
+
+  String str = SendCmd + String(url.length());
+  sendToServer(str);
+  SIM900A.print(url);
+  delay(1000);
+  SIM900A.write(0x1A);  // End of transmission
+
+  Serial.println("Waiting...1 minute");
+  for(waiting = 0; waiting < 60 ; waiting++){delay(1000);}
+}
+
+void sendToServer(const String &str)
+{
+  SIM900A.println(str); 
+  Serial.println(str);
+  delay(1000);
+}
+
+void initGSM()
+{
+  connectGSM("AT", "OK");
+  connectGSM("ATE1", "OK");
+  connectGSM("AT+CPIN?", "READY");
+}
+
+bool initGPRS()
+{
+  connectGSM("AT+CIPSHUT", "OK");
+  connectGSM("AT+CGATT=1", "OK");
+  connectGSM("AT+CSTT=\"internet\",\"\",\"\"", "OK");
+  connectGSM("AT+CIICR", "OK");
+  delay(1000);
+  
+  SIM900A.println("AT+CIFSR");
+  delay(1000);
+  
+  if (SIM900A.available()) {
+    Serial.println("GPRS Initialized");
+    return true;
+  }
+  
+  return false;
+}
+
+void connectGSM(const String &cmd, char *res)
+{
+  int attemptCount = 0;
+  const int maxAttempts = 30;
+
+  while (attemptCount < maxAttempts)
+  {
+    Serial.println("Command :==> " + cmd);
+    SIM900A.println(cmd);
+    delay(500);
+
+    if (SIM900A.find(res))
+    {
+      delay(500);
+      Serial.println(" |_Response : " + cmd + " ==>" + res);
+      return;
+    }
+
+    attemptCount++;
+    delay(1000);
+  }
+
+  Serial.println("Max attempts reached. Could not find response: " + String(res));
+}
